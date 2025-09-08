@@ -132,7 +132,7 @@ blueprint:
           selector:
             text:
               multiline: false
-        message:
+        auth_method:
           name: Authentication Method
           description: The method for authenticating snapshot requests (e.g., 'digest' or 'basic').
           default: digest
@@ -230,8 +230,8 @@ variables:
   delivery: !input notification_delivery
   provider: !input provider
   model: !input model
-  prompt: !input message
   auth_method: !input auth_method
+  prompt: !input message
   analysis_duration: !input duration
   max_frames_num: !input max_frames
   target_width_num: !input target_width
