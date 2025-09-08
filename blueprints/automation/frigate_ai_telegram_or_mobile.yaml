@@ -282,7 +282,7 @@ trigger:
 
 condition:
   - condition: state
-    entity_id: binary_sensor.{{ camera }}_person_occupancy
+    entity_id: binary_sensor.doorbell_person_occupancy
     state: "on"
   - "{{ event_type != 'end' or not is_mqtt_trigger }}"
   - "{{ not zone_only or entered_zones | length > 0 }}"
@@ -300,7 +300,7 @@ action:
     data:
       message: >-
         Trigger: {{ trigger.platform }}, Payload: {{ trigger.payload_json if trigger.platform == 'mqtt' else 'N/A' }},
-        Occupancy: {{ states('binary_sensor.' + camera + '_person_occupancy') }},
+        Occupancy: {{ states('binary_sensor.doorbell_person_occupancy') }},
         Zones: {{ entered_zones }}, Labels: {{ object_label }}
       level: debug
   - choose:
