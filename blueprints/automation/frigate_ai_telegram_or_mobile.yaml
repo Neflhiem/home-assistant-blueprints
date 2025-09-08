@@ -5,7 +5,7 @@ blueprint:
     Supports Telegram for bot notifications or Mobile for Home Assistant app notifications.
     Stores events in LLMVision timeline if enabled. Dynamically updates mobile notifications where possible.
   domain: automation
-  source_url: https://github.com/your-username/home-assistant-blueprints/blob/main/blueprints/automation/frigate_ai_telegram_or_mobile.yaml
+  source_url: https://raw.githubusercontent.com/Neflhiem/home-assistant-blueprints/main/blueprints/automation/frigate_ai_telegram_or_mobile.yaml
   input:
     camera_name:
       name: Frigate Camera Name
@@ -44,7 +44,7 @@ blueprint:
         message_thread_id:
           name: Message Thread ID (Optional)
           description: The topic ID within the group chat (e.g., 126). Leave blank for top-level.
-          default: ""
+          default: "126"
           selector:
             text:
               multiline: false
@@ -57,7 +57,7 @@ blueprint:
         base_url:
           name: Base URL
           description: External URL for Home Assistant (required for clips/snapshots, e.g., https://your-nabu-casa.ui.nabu.casa).
-          default: ""
+          default: https://nsega6qpftnquzzq6rg8wvpmyrshcwaj.ui.nabu.casa
           selector:
             text:
               multiline: false
@@ -92,19 +92,19 @@ blueprint:
         zone_filter:
           name: Zone Filter
           description: Only notify if object enters a zone.
-          default: false
+          default: true
           selector:
             boolean: {}
         zones:
           name: Trigger Zones
           description: List of zones to notify for (e.g., ['Front_Door_Zone']).
-          default: []
+          default: ['Front_Door_Zone']
           selector:
             object: {}
         labels:
           name: Trigger Labels
           description: List of object labels to notify for (e.g., ['person']).
-          default: []
+          default: ['person']
           selector:
             object: {}
         presence_filter:
@@ -271,23 +271,23 @@ variables:
     {% else %}
       {{ now() - timedelta(minutes=cooldown_minutes + 1) }}
     {% endif %}
-    
+
 trigger:
+  - platform: state
+    entity_id: binary_sensor.{{ camera }}_all_occupancy
+    to: "on"
   - platform: mqtt
     topic: frigate/events
     value_template: "{{ value_json['after']['camera'] == camera and value_json['type'] != 'end' }}"
-  - platform: state
-    entity_id: binary_sensor.doorbell_all_occupancy
-    to: "on"
 
 condition:
+  - condition: state
+    entity_id: binary_sensor.{{ camera }}_person_occupancy
+    state: "on"
   - "{{ event_type != 'end' or not is_mqtt_trigger }}"
   - "{{ not zone_only or entered_zones | length > 0 }}"
   - "{{ not zones_list or zones_list | select('in', entered_zones) | list | length > 0 }}"
   - "{{ not labels_list or object_label.lower() in labels_list }}"
-  - condition: state
-    entity_id: binary_sensor.doorbell_person_occupancy
-    state: "on"
   - condition: template
     value_template: "{{ not presence_entity or states(presence_entity) != 'home' }}"
 
@@ -296,6 +296,13 @@ action:
       last_triggered: "{{ this.attributes.last_triggered | default(now() - timedelta(minutes=cooldown_minutes + 1)) }}"
   - condition: template
     value_template: "{{ (now() - last_triggered).total_seconds() / 60 >= cooldown_minutes }}"
+  - service: system_log.write
+    data:
+      message: >-
+        Trigger: {{ trigger.platform }}, Payload: {{ trigger.payload_json if trigger.platform == 'mqtt' else 'N/A' }},
+        Occupancy: {{ states('binary_sensor.' + camera + '_person_occupancy') }},
+        Zones: {{ entered_zones }}, Labels: {{ object_label }}
+      level: debug
   - choose:
       # Telegram Actions
       - conditions:
