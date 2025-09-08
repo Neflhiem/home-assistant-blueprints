@@ -5,7 +5,7 @@ blueprint:
     Supports Telegram for bot notifications or Mobile for Home Assistant app notifications.
     Stores events in LLMVision timeline if enabled. Dynamically updates mobile notifications where possible.
   domain: automation
-  source_url: https://example.com/blueprints/frigate_ai_telegram.yaml
+  source_url: https://github.com/your-username/home-assistant-blueprints/blob/main/blueprints/automation/frigate_ai_telegram_or_mobile.yaml
   input:
     camera_name:
       name: Frigate Camera Name
@@ -15,7 +15,8 @@ blueprint:
           multiline: false
     camera_entity:
       name: Camera Entity
-      description: The Home Assistant camera entity for this Frigate camera (e.g., 'camera.doorbell').
+      description: The Home Assistant camera entity for this Frigate camera (e.g., 'camera.doorbell_2').
+      default: camera.doorbell_2
       selector:
         entity:
           domain: camera
@@ -96,13 +97,13 @@ blueprint:
             boolean: {}
         zones:
           name: Trigger Zones
-          description: List of zones to notify for (e.g., ['Front_Door_Zone', '2sept2025_racoon_tracking']).
+          description: List of zones to notify for (e.g., ['Front_Door_Zone']).
           default: []
           selector:
             object: {}
         labels:
           name: Trigger Labels
-          description: List of object labels to notify for (e.g., ['person', 'dog']).
+          description: List of object labels to notify for (e.g., ['person']).
           default: []
           selector:
             object: {}
@@ -172,7 +173,7 @@ blueprint:
         max_tokens:
           name: Max Tokens
           description: Maximum tokens for summary generation.
-          default: 100
+          default: 200
           selector:
             number:
               min: 10
@@ -205,10 +206,31 @@ blueprint:
 variables:
   camera: !input camera_name
   camera_entity: !input camera_entity
-  event_id: "{{ trigger.payload_json['after']['id'] }}"
-  event_type: "{{ trigger.payload_json['type'] }}"
-  object_label: "{{ trigger.payload_json['after']['label'] | title }}"
-  entered_zones: "{{ trigger.payload_json['after']['entered_zones'] }}"
+  is_mqtt_trigger: "{{ trigger.platform == 'mqtt' }}"
+  event_id: >-
+    {% if is_mqtt_trigger %}
+      {{ trigger.payload_json['after']['id'] }}
+    {% else %}
+      {{ now().strftime('%Y%m%d_%H%M%S') }}
+    {% endif %}
+  event_type: >-
+    {% if is_mqtt_trigger %}
+      {{ trigger.payload_json['type'] }}
+    {% else %}
+      new
+    {% endif %}
+  object_label: >-
+    {% if is_mqtt_trigger %}
+      {{ trigger.payload_json['after']['label'] | title }}
+    {% else %}
+      person
+    {% endif %}
+  entered_zones: >-
+    {% if is_mqtt_trigger %}
+      {{ trigger.payload_json['after']['entered_zones'] }}
+    {% else %}
+      ['Front_Door_Zone']
+    {% endif %}
   zones_list: !input zones
   labels_list: !input labels
   zone_only: !input zone_filter
@@ -247,12 +269,18 @@ trigger:
   - platform: mqtt
     topic: frigate/events
     value_template: "{{ value_json['after']['camera'] == camera and value_json['type'] != 'end' }}"
+  - platform: state
+    entity_id: binary_sensor.doorbell_all_occupancy
+    to: "on"
 
 condition:
-  - "{{ event_type != 'end' }}"
+  - "{{ event_type != 'end' or not is_mqtt_trigger }}"
   - "{{ not zone_only or entered_zones | length > 0 }}"
   - "{{ not zones_list or zones_list | select('in', entered_zones) | list | length > 0 }}"
   - "{{ not labels_list or object_label.lower() in labels_list }}"
+  - condition: state
+    entity_id: binary_sensor.doorbell_person_occupancy
+    state: "on"
   - condition: template
     value_template: "{{ not presence_entity or states(presence_entity) != 'home' }}"
 
