@@ -274,7 +274,7 @@ variables:
 
 trigger:
   - platform: state
-    entity_id: binary_sensor.{{ camera }}_all_occupancy
+    entity_id: binary_sensor.doorbell_all_occupancy
     to: "on"
   - platform: mqtt
     topic: frigate/events
