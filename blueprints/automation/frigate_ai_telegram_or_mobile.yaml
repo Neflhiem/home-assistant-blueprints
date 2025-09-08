@@ -242,13 +242,6 @@ variables:
     {% else %}
       /api/frigate/notifications/{{ event_id }}/{{ camera }}/clip.mp4
     {% endif %}
-  last_triggered: >-
-    {% set lt = this.attributes.last_triggered | default(None) %}
-    {% if lt and lt is not string %}
-      {{ lt }}
-    {% else %}
-      {{ now() - timedelta(minutes=cooldown_minutes + 1) }}
-    {% endif %}
 
 trigger:
   - platform: state
@@ -266,18 +259,6 @@ condition:
     value_template: "{{ not presence_entity or states(presence_entity) != 'home' }}"
 
 action:
-  - variables:
-      last_triggered: >-
-        {% set lt = this.attributes.last_triggered | default(None) %}
-        {% if lt and lt is not string %}
-          {{ lt }}
-        {% else %}
-          {{ now() - timedelta(minutes=cooldown_minutes + 1) }}
-        {% endif %}
-  - condition: template
-    value_template: >-
-      {% set elapsed = (now() - last_triggered).total_seconds() / 60 %}
-      {{ elapsed >= cooldown_minutes or elapsed is undefined }}
   - service: system_log.write
     data:
       message: >-
