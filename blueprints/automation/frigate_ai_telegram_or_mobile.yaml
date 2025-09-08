@@ -133,6 +133,15 @@ blueprint:
             text:
               multiline: false
         message:
+          name: Authentication Method
+          description: The method for authenticating snapshot requests (e.g., 'digest' or 'basic').
+          default: digest
+          selector:
+            select:
+              options:
+                - digest
+                - basic
+        message:
           name: Analysis Prompt
           description: Prompt for summarizing the event.
           default: |
@@ -222,6 +231,7 @@ variables:
   provider: !input provider
   model: !input model
   prompt: !input message
+  auth_method: !input auth_method
   analysis_duration: !input duration
   max_frames_num: !input max_frames
   target_width_num: !input target_width
@@ -232,15 +242,15 @@ variables:
   cooldown_minutes: !input cooldown
   snapshot_url: >-
     {% if base_url %}
-      {{ base_url }}/api/frigate/notifications/{{ event_id }}/snapshot.jpg
+      {{ base_url }}/local/snapshots/{{ camera }}/last_motion.jpg
     {% else %}
-      /api/frigate/notifications/{{ event_id }}/snapshot.jpg
+      /local/snapshots/{{ camera }}/last_motion.jpg
     {% endif %}
   clip_url: >-
     {% if base_url %}
-      {{ base_url }}/api/frigate/notifications/{{ event_id }}/{{ camera }}/clip.mp4
+      {{ base_url }}/api/frigate/{{ camera }}/latest.mp4
     {% else %}
-      /api/frigate/notifications/{{ event_id }}/{{ camera }}/clip.mp4
+      /api/frigate/{{ camera }}/latest.mp4
     {% endif %}
 
 trigger:
@@ -263,7 +273,8 @@ action:
     data:
       message: >-
         Trigger: state, Occupancy: {{ states('binary_sensor.doorbell_person_occupancy') }},
-        Zones: {{ entered_zones }}, Labels: {{ object_label }}
+        Zones: {{ entered_zones }}, Labels: {{ object_label }},
+        Snapshot URL: {{ snapshot_url }}
       level: debug
   - choose:
       # Telegram Actions
@@ -280,6 +291,7 @@ action:
               disable_notification: "{{ disable_notif }}"
               caption: "Movement detected: {{ object_label }} on {{ camera | replace('_', ' ') | title }}."
               url: "{{ snapshot_url }}"
+              authentication: "{{ auth_method }}"
           - action: llmvision.stream_analyzer
             data:
               image_entity: "{{ camera_entity }}"
@@ -310,7 +322,7 @@ action:
                 - wait_for_trigger:
                     - platform: mqtt
                       topic: frigate/events
-                      value_template: "{{ value_json['after']['id'] == event_id }}"
+                      value_template: "{{ value_json['after']['camera'] == camera and value_json['type'] == 'end' }}"
                   timeout:
                     minutes: 5
                   continue_on_timeout: true
@@ -325,6 +337,7 @@ action:
                       Clip for {{ object_label }} on {{ camera | replace('_', ' ') | title }}.
                       Summary: {{ ai_response.response_text | default('No summary') }}
                     url: "{{ clip_url }}"
+                    authentication: "{{ auth_method }}"
               until:
                 - condition: template
                   value_template: "{{ wait.trigger is defined and wait.trigger.payload_json['type'] == 'end' }}"
@@ -396,7 +409,7 @@ action:
                 - wait_for_trigger:
                     - platform: mqtt
                       topic: frigate/events
-                      value_template: "{{ value_json['after']['id'] == event_id }}"
+                      value_template: "{{ value_json['after']['camera'] == camera and value_json['type'] == 'end' }}"
                   timeout:
                     minutes: 5
                   continue_on_timeout: true
@@ -425,3 +438,4 @@ action:
 
 mode: single
 max_exceeded: silent
+```
