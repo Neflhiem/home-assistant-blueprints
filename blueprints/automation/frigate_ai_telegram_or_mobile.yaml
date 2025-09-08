@@ -224,13 +224,12 @@ blueprint:
           max: 60
           step: 1
           mode: slider
-
 variables:
   camera: !input camera_name
   camera_entity: !input camera_entity
-  event_id: "{{ now().strftime('%Y%m%d_%H%M%S') }}"
-  object_label: "person"
-  entered_zones: ['Front_Door_Zone']
+  event_id: "{{ trigger.payload_json['after']['id'] if trigger.payload_json is defined else now().strftime('%Y%m%d_%H%M%S') }}"
+  object_label: "{{ trigger.payload_json['after']['label'] if trigger.payload_json is defined else 'person' }}"
+  entered_zones: "{{ trigger.payload_json['after']['entered_zones'] if trigger.payload_json is defined else ['Front_Door_Zone'] }}"
   zones_list: !input zones
   labels_list: !input labels
   zone_only: !input zone_filter
@@ -263,16 +262,14 @@ variables:
     {% endif %}
   clip_url: >-
     {% if base_url %}
-      {{ base_url }}/api/frigate/{{ camera }}/latest.mp4
+      {{ base_url }}/api/frigate/notifications/{{ event_id }}/{{ camera }}/clip.mp4
     {% else %}
-      /api/frigate/{{ camera }}/latest.mp4
+      /api/frigate/notifications/{{ event_id }}/{{ camera }}/clip.mp4
     {% endif %}
-
 trigger:
-  - platform: state
-    entity_id: binary_sensor.doorbell_all_occupancy
-    to: "on"
-
+  - platform: mqtt
+    topic: frigate/events
+    value_template: "{{ value_json['after']['camera'] == camera and value_json['type'] != 'end' }}"
 condition:
   - condition: state
     entity_id: binary_sensor.doorbell_person_occupancy
@@ -282,12 +279,11 @@ condition:
   - "{{ not labels_list or object_label.lower() in labels_list }}"
   - condition: template
     value_template: "{{ not presence_entity or states(presence_entity) != 'home' }}"
-
 action:
   - service: system_log.write
     data:
       message: >-
-        Trigger: state, Occupancy: {{ states('binary_sensor.doorbell_person_occupancy') }},
+        Trigger: mqtt, Event ID: {{ event_id }}, Occupancy: {{ states('binary_sensor.doorbell_person_occupancy') }},
         Zones: {{ entered_zones }}, Labels: {{ object_label }},
         Snapshot URL: {{ snapshot_url }}
       level: debug
@@ -311,7 +307,7 @@ action:
               password: "{{ password }}"
           - action: llmvision.stream_analyzer
             data:
-              image_entity: "{{ camera_entity }}"
+              image_path: "/config/www/snapshots/{{ camera }}/last_motion.jpg"
               duration: "{{ analysis_duration }}"
               provider: "{{ provider }}"
               model: "{{ model }}"
@@ -339,7 +335,7 @@ action:
                 - wait_for_trigger:
                     - platform: mqtt
                       topic: frigate/events
-                      value_template: "{{ value_json['after']['camera'] == camera and value_json['type'] == 'end' }}"
+                      value_template: "{{ value_json['after']['id'] == event_id and value_json['type'] == 'end' }}"
                   timeout:
                     minutes: 5
                   continue_on_timeout: true
@@ -389,7 +385,7 @@ action:
             else: []
           - action: llmvision.stream_analyzer
             data:
-              image_entity: "{{ camera_entity }}"
+              image_path: "/config/www/snapshots/{{ camera }}/last_motion.jpg"
               duration: "{{ analysis_duration }}"
               provider: "{{ provider }}"
               model: "{{ model }}"
@@ -428,7 +424,7 @@ action:
                 - wait_for_trigger:
                     - platform: mqtt
                       topic: frigate/events
-                      value_template: "{{ value_json['after']['camera'] == camera and value_json['type'] == 'end' }}"
+                      value_template: "{{ value_json['after']['id'] == event_id and value_json['type'] == 'end' }}"
                   timeout:
                     minutes: 5
                   continue_on_timeout: true
@@ -454,6 +450,5 @@ action:
                   value_template: "{{ wait.trigger is defined and wait.trigger.payload_json['type'] == 'end' }}"
   - delay:
       minutes: "{{ cooldown_minutes }}"
-
 mode: single
 max_exceeded: silent
