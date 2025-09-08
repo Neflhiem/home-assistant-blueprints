@@ -206,31 +206,9 @@ blueprint:
 variables:
   camera: !input camera_name
   camera_entity: !input camera_entity
-  is_mqtt_trigger: "{{ trigger.platform == 'mqtt' }}"
-  event_id: >-
-    {% if is_mqtt_trigger %}
-      {{ trigger.payload_json['after']['id'] }}
-    {% else %}
-      {{ now().strftime('%Y%m%d_%H%M%S') }}
-    {% endif %}
-  event_type: >-
-    {% if is_mqtt_trigger %}
-      {{ trigger.payload_json['type'] }}
-    {% else %}
-      new
-    {% endif %}
-  object_label: >-
-    {% if is_mqtt_trigger %}
-      {{ trigger.payload_json['after']['label'] | title }}
-    {% else %}
-      person
-    {% endif %}
-  entered_zones: >-
-    {% if is_mqtt_trigger %}
-      {{ trigger.payload_json['after']['entered_zones'] }}
-    {% else %}
-      ['Front_Door_Zone']
-    {% endif %}
+  event_id: "{{ now().strftime('%Y%m%d_%H%M%S') }}"
+  object_label: "person"
+  entered_zones: ['Front_Door_Zone']
   zones_list: !input zones
   labels_list: !input labels
   zone_only: !input zone_filter
@@ -276,15 +254,11 @@ trigger:
   - platform: state
     entity_id: binary_sensor.doorbell_all_occupancy
     to: "on"
-  - platform: mqtt
-    topic: frigate/events
-    value_template: "{{ value_json['after']['camera'] == camera and value_json['type'] != 'end' }}"
 
 condition:
   - condition: state
     entity_id: binary_sensor.doorbell_person_occupancy
     state: "on"
-  - "{{ event_type != 'end' or not is_mqtt_trigger }}"
   - "{{ not zone_only or entered_zones | length > 0 }}"
   - "{{ not zones_list or zones_list | select('in', entered_zones) | list | length > 0 }}"
   - "{{ not labels_list or object_label.lower() in labels_list }}"
@@ -293,14 +267,21 @@ condition:
 
 action:
   - variables:
-      last_triggered: "{{ this.attributes.last_triggered | default(now() - timedelta(minutes=cooldown_minutes + 1)) }}"
+      last_triggered: >-
+        {% set lt = this.attributes.last_triggered | default(None) %}
+        {% if lt and lt is not string %}
+          {{ lt }}
+        {% else %}
+          {{ now() - timedelta(minutes=cooldown_minutes + 1) }}
+        {% endif %}
   - condition: template
-    value_template: "{{ (now() - last_triggered).total_seconds() / 60 >= cooldown_minutes }}"
+    value_template: >-
+      {% set elapsed = (now() - last_triggered).total_seconds() / 60 %}
+      {{ elapsed >= cooldown_minutes or elapsed is undefined }}
   - service: system_log.write
     data:
       message: >-
-        Trigger: {{ trigger.platform }}, Payload: {{ trigger.payload_json if trigger.platform == 'mqtt' else 'N/A' }},
-        Occupancy: {{ states('binary_sensor.doorbell_person_occupancy') }},
+        Trigger: state, Occupancy: {{ states('binary_sensor.doorbell_person_occupancy') }},
         Zones: {{ entered_zones }}, Labels: {{ object_label }}
       level: debug
   - choose:
