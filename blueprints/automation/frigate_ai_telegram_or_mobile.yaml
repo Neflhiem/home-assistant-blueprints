@@ -1,0 +1,423 @@
+blueprint:
+  name: Frigate AI Event Summary to Telegram or Mobile
+  description: |
+    AI-powered summaries for Frigate security camera events. Sends notifications with snapshots and clips.
+    Supports Telegram for bot notifications or Mobile for Home Assistant app notifications.
+    Stores events in LLMVision timeline if enabled. Dynamically updates mobile notifications where possible.
+  domain: automation
+  source_url: https://example.com/blueprints/frigate_ai_telegram.yaml
+  input:
+    camera_name:
+      name: Frigate Camera Name
+      description: The name of the camera as defined in your Frigate configuration (e.g., 'doorbell').
+      selector:
+        text:
+          multiline: false
+    camera_entity:
+      name: Camera Entity
+      description: The Home Assistant camera entity for this Frigate camera (e.g., 'camera.doorbell').
+      selector:
+        entity:
+          domain: camera
+    notification_method:
+      name: Notification Method
+      description: Choose Telegram for bot notifications or Mobile for Home Assistant app.
+      default: telegram
+      selector:
+        select:
+          options:
+            - telegram
+            - mobile
+    telegram_section:
+      name: Telegram Settings
+      description: Settings for Telegram notifications.
+      icon: mdi:telegram
+      collapsed: true
+      input:
+        target_chat:
+          name: Target Chat ID
+          description: The chat_id for the Telegram bot (e.g., -1002174372477).
+          selector:
+            text:
+              multiline: false
+        message_thread_id:
+          name: Message Thread ID (Optional)
+          description: The topic ID within the group chat (e.g., 126). Leave blank for top-level.
+          default: ""
+          selector:
+            text:
+              multiline: false
+        disable_notification:
+          name: Disable Notification Sound
+          description: Set to true to send without sound.
+          default: false
+          selector:
+            boolean: {}
+        base_url:
+          name: Base URL
+          description: External URL for Home Assistant (required for clips/snapshots, e.g., https://your-nabu-casa.ui.nabu.casa).
+          default: ""
+          selector:
+            text:
+              multiline: false
+    mobile_section:
+      name: Mobile App Settings
+      description: Settings for Home Assistant mobile app notifications.
+      icon: mdi:cellphone
+      collapsed: true
+      input:
+        notify_devices:
+          name: Notify Devices
+          description: Devices to send notifications to (Home Assistant mobile app).
+          default: []
+          selector:
+            device:
+              integration: mobile_app
+              multiple: true
+        notification_delivery:
+          name: Notification Delivery
+          description: Dynamic sends preview immediately and updates with summary. Consolidated waits for summary.
+          default: Dynamic
+          selector:
+            select:
+              options:
+                - Dynamic
+                - Consolidated
+    filters_section:
+      name: Event Filters
+      description: Filters for triggering notifications.
+      icon: mdi:filter
+      input:
+        zone_filter:
+          name: Zone Filter
+          description: Only notify if object enters a zone.
+          default: false
+          selector:
+            boolean: {}
+        zones:
+          name: Trigger Zones
+          description: List of zones to notify for (e.g., ['Front_Door_Zone', '2sept2025_racoon_tracking']).
+          default: []
+          selector:
+            object: {}
+        labels:
+          name: Trigger Labels
+          description: List of object labels to notify for (e.g., ['person', 'dog']).
+          default: []
+          selector:
+            object: {}
+        presence_filter:
+          name: Presence Filter
+          description: Entity to check if home (only notify if not home).
+          default: ""
+          selector:
+            entity: {}
+    ai_section:
+      name: AI Analysis Settings
+      description: LLMVision settings for event summaries.
+      icon: mdi:brain
+      collapsed: true
+      input:
+        provider:
+          name: LLMVision Provider
+          description: The LLMVision integration provider (e.g., openai).
+          selector:
+            config_entry:
+              integration: llmvision
+        model:
+          name: Model
+          description: The AI model to use (e.g., gpt-4o-mini).
+          default: gpt-4o-mini
+          selector:
+            text:
+              multiline: false
+        message:
+          name: Analysis Prompt
+          description: Prompt for summarizing the event.
+          default: |
+            Summarize the events based on a series of images captured at short intervals. Focus only on moving subjects such as people, vehicles, and other active elements. Ignore static objects and scenery. Provide a clear and concise account of movements and interactions. Do not mention or imply the existence of images—present the information as if directly observing the events. If no movement is detected, respond with: 'No activity observed.'
+          selector:
+            text:
+              multiline: true
+        duration:
+          name: Analysis Duration
+          description: Seconds to analyze the stream after event start.
+          default: 10
+          selector:
+            number:
+              min: 1
+              max: 60
+              step: 1
+              mode: slider
+        max_frames:
+          name: Max Frames
+          description: Maximum frames to analyze (picks most movement).
+          default: 5
+          selector:
+            number:
+              min: 1
+              max: 20
+              step: 1
+              mode: slider
+        target_width:
+          name: Target Image Width
+          description: Downscale width for faster processing.
+          default: 1280
+          selector:
+            number:
+              min: 512
+              max: 1920
+              step: 64
+              mode: slider
+        max_tokens:
+          name: Max Tokens
+          description: Maximum tokens for summary generation.
+          default: 100
+          selector:
+            number:
+              min: 10
+              max: 500
+              step: 10
+              mode: slider
+        remember:
+          name: Store in Timeline
+          description: Save event to LLMVision timeline for querying.
+          default: true
+          selector:
+            boolean: {}
+        use_memory:
+          name: Use Memory Context
+          description: Use stored memory for better context (requires setup).
+          default: false
+          selector:
+            boolean: {}
+    cooldown:
+      name: Cooldown
+      description: Minimum time between notifications (minutes).
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          step: 1
+          mode: slider
+
+variables:
+  camera: !input camera_name
+  camera_entity: !input camera_entity
+  event_id: "{{ trigger.payload_json['after']['id'] }}"
+  event_type: "{{ trigger.payload_json['type'] }}"
+  object_label: "{{ trigger.payload_json['after']['label'] | title }}"
+  entered_zones: "{{ trigger.payload_json['after']['entered_zones'] }}"
+  zones_list: !input zones
+  labels_list: !input labels
+  zone_only: !input zone_filter
+  presence_entity: !input presence_filter
+  method: !input notification_method
+  target_chat: !input target_chat
+  thread_id: !input message_thread_id
+  disable_notif: !input disable_notification
+  base_url: !input base_url
+  delivery: !input notification_delivery
+  provider: !input provider
+  model: !input model
+  prompt: !input message
+  analysis_duration: !input duration
+  max_frames_num: !input max_frames
+  target_width_num: !input target_width
+  max_tokens_num: !input max_tokens
+  remember_flag: !input remember
+  use_memory_flag: !input use_memory
+  notify_devices: !input notify_devices
+  cooldown_minutes: !input cooldown
+  snapshot_url: >-
+    {% if base_url %}
+      {{ base_url }}/api/frigate/notifications/{{ event_id }}/snapshot.jpg
+    {% else %}
+      /api/frigate/notifications/{{ event_id }}/snapshot.jpg
+    {% endif %}
+  clip_url: >-
+    {% if base_url %}
+      {{ base_url }}/api/frigate/notifications/{{ event_id }}/{{ camera }}/clip.mp4
+    {% else %}
+      /api/frigate/notifications/{{ event_id }}/{{ camera }}/clip.mp4
+    {% endif %}
+
+trigger:
+  - platform: mqtt
+    topic: frigate/events
+    value_template: "{{ value_json['after']['camera'] == camera and value_json['type'] != 'end' }}"
+
+condition:
+  - "{{ event_type != 'end' }}"
+  - "{{ not zone_only or entered_zones | length > 0 }}"
+  - "{{ not zones_list or zones_list | select('in', entered_zones) | list | length > 0 }}"
+  - "{{ not labels_list or object_label.lower() in labels_list }}"
+  - condition: template
+    value_template: "{{ not presence_entity or states(presence_entity) != 'home' }}"
+
+action:
+  - variables:
+      last_triggered: "{{ this.attributes.last_triggered | default(now() - timedelta(minutes=cooldown_minutes + 1)) }}"
+  - condition: template
+    value_template: "{{ (now() - last_triggered).total_seconds() / 60 >= cooldown_minutes }}"
+  - choose:
+      # Telegram Actions
+      - conditions:
+          - condition: template
+            value_template: "{{ method == 'telegram' }}"
+        sequence:
+          - condition: template
+            value_template: "{{ base_url != '' }}"
+          - action: telegram_bot.send_photo
+            data:
+              target: "{{ target_chat }}"
+              message_thread_id: "{{ thread_id }}"
+              disable_notification: "{{ disable_notif }}"
+              caption: "Movement detected: {{ object_label }} on {{ camera | replace('_', ' ') | title }}."
+              url: "{{ snapshot_url }}"
+          - action: llmvision.stream_analyzer
+            data:
+              image_entity: "{{ camera_entity }}"
+              duration: "{{ analysis_duration }}"
+              provider: "{{ provider }}"
+              model: "{{ model }}"
+              message: "{{ prompt }}"
+              use_memory: "{{ use_memory_flag }}"
+              remember: "{{ remember_flag }}"
+              expose_images: "{{ remember_flag }}"
+              generate_title: "{{ remember_flag }}"
+              include_filename: true
+              max_frames: "{{ max_frames_num }}"
+              target_width: "{{ target_width_num }}"
+              max_tokens: "{{ max_tokens_num }}"
+            response_variable: ai_response
+          - action: telegram_bot.send_message
+            data:
+              target: "{{ target_chat }}"
+              message_thread_id: "{{ thread_id }}"
+              disable_notification: "{{ disable_notif }}"
+              message: >-
+                Event Summary for {{ camera | replace('_', ' ') | title }}:
+                {{ ai_response.response_text | default('Analysis failed') }}
+                {% if ai_response.title %}Title: {{ ai_response.title }}{% endif %}
+          - repeat:
+              sequence:
+                - wait_for_trigger:
+                    - platform: mqtt
+                      topic: frigate/events
+                      value_template: "{{ value_json['after']['id'] == event_id }}"
+                  timeout:
+                    minutes: 5
+                  continue_on_timeout: true
+                - condition: template
+                  value_template: "{{ wait.trigger is defined and wait.trigger.payload_json['type'] == 'end' }}"
+                - action: telegram_bot.send_video
+                  data:
+                    target: "{{ target_chat }}"
+                    message_thread_id: "{{ thread_id }}"
+                    disable_notification: "{{ disable_notif }}"
+                    caption: >-
+                      Clip for {{ object_label }} on {{ camera | replace('_', ' ') | title }}.
+                      Summary: {{ ai_response.response_text | default('No summary') }}
+                    url: "{{ clip_url }}"
+              until:
+                - condition: template
+                  value_template: "{{ wait.trigger is defined and wait.trigger.payload_json['type'] == 'end' }}"
+      # Mobile App Actions
+      - conditions:
+          - condition: template
+            value_template: "{{ method == 'mobile' }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ delivery == 'Dynamic' }}"
+            then:
+              - repeat:
+                  for_each: "{{ notify_devices }}"
+                  sequence:
+                    - action: notify.mobile_app_{{ repeat.item.name | lower | replace(' ', '_') }}
+                      data:
+                        title: "Activity on {{ camera | replace('_', ' ') | title }}"
+                        message: "Motion detected: {{ object_label }}."
+                        data:
+                          image: "{{ snapshot_url }}"
+                          group: "frigate_events"
+                          tag: "{{ event_id }}"
+                          ttl: 0
+                          priority: high
+                          actions:
+                            - action: URI
+                              title: "View Snapshot"
+                              uri: "{{ snapshot_url }}"
+            else: []
+          - action: llmvision.stream_analyzer
+            data:
+              image_entity: "{{ camera_entity }}"
+              duration: "{{ analysis_duration }}"
+              provider: "{{ provider }}"
+              model: "{{ model }}"
+              message: "{{ prompt }}"
+              use_memory: "{{ use_memory_flag }}"
+              remember: "{{ remember_flag }}"
+              expose_images: "{{ remember_flag or delivery == 'Consolidated' }}"
+              generate_title: "{{ remember_flag }}"
+              include_filename: true
+              max_frames: "{{ max_frames_num }}"
+              target_width: "{{ target_width_num }}"
+              max_tokens: "{{ max_tokens_num }}"
+            response_variable: ai_response
+          - repeat:
+              for_each: "{{ notify_devices }}"
+              sequence:
+                - action: notify.mobile_app_{{ repeat.item.name | lower | replace(' ', '_') }}
+                  data:
+                    title: >-
+                      {% if ai_response.title %}{{ ai_response.title }}{% else %}Activity on {{ camera | replace('_', ' ') | title }}{% endif %}
+                    message: "{{ ai_response.response_text | default('Analysis failed') }}"
+                    data:
+                      image: >-
+                        {% if ai_response.key_frame %}{{ ai_response.key_frame | replace('/config/media', '/media') }}{% else %}{{ snapshot_url }}{% endif %}
+                      group: "frigate_events"
+                      tag: "{{ event_id }}"
+                      ttl: 0
+                      priority: high
+                      actions:
+                        - action: URI
+                          title: "View Snapshot"
+                          uri: >-
+                            {% if ai_response.key_frame %}{{ ai_response.key_frame | replace('/config/media', '/media') }}{% else %}{{ snapshot_url }}{% endif %}
+          - repeat:
+              sequence:
+                - wait_for_trigger:
+                    - platform: mqtt
+                      topic: frigate/events
+                      value_template: "{{ value_json['after']['id'] == event_id }}"
+                  timeout:
+                    minutes: 5
+                  continue_on_timeout: true
+                - condition: template
+                  value_template: "{{ wait.trigger is defined and wait.trigger.payload_json['type'] == 'end' }}"
+                - repeat:
+                    for_each: "{{ notify_devices }}"
+                    sequence:
+                      - action: notify.mobile_app_{{ repeat.item.name | lower | replace(' ', '_') }}
+                        data:
+                          title: "Clip Available: {{ camera | replace('_', ' ') | title }}"
+                          message: "Event clip ready. Summary: {{ ai_response.response_text | default('No summary') }}"
+                          data:
+                            attachment:
+                              url: "{{ clip_url }}"
+                              content_type: "video/mp4"
+                            actions:
+                              - action: URI
+                                title: "View Clip"
+                                uri: "{{ clip_url }}"
+              until:
+                - condition: template
+                  value_template: "{{ wait.trigger is defined and wait.trigger.payload_json['type'] == 'end' }}"
+  - delay:
+      minutes: "{{ cooldown_minutes }}"
+
+mode: single
+max_exceeded: silent
