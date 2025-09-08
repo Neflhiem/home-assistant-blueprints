@@ -279,6 +279,8 @@ condition:
   - "{{ not labels_list or object_label.lower() in labels_list }}"
   - condition: template
     value_template: "{{ not presence_entity or states(presence_entity) != 'home' }}"
+  - condition: template
+    value_template: "{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds() > (cooldown_minutes * 60) }}"
 action:
   - service: system_log.write
     data:
@@ -307,7 +309,7 @@ action:
               password: "{{ password }}"
           - action: llmvision.stream_analyzer
             data:
-              image_path: "/config/www/snapshots/{{ camera }}/last_motion.jpg"
+              image_path: "{{ snapshot_url }}"
               duration: "{{ analysis_duration }}"
               provider: "{{ provider }}"
               model: "{{ model }}"
@@ -385,7 +387,7 @@ action:
             else: []
           - action: llmvision.stream_analyzer
             data:
-              image_path: "/config/www/snapshots/{{ camera }}/last_motion.jpg"
+              image_path: "{{ snapshot_url }}"
               duration: "{{ analysis_duration }}"
               provider: "{{ provider }}"
               model: "{{ model }}"
