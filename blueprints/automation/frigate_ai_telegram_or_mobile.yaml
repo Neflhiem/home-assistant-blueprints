@@ -264,7 +264,14 @@ variables:
     {% else %}
       /api/frigate/notifications/{{ event_id }}/{{ camera }}/clip.mp4
     {% endif %}
-
+  last_triggered: >-
+    {% set lt = this.attributes.last_triggered | default(None) %}
+    {% if lt and lt is not string %}
+      {{ lt }}
+    {% else %}
+      {{ now() - timedelta(minutes=cooldown_minutes + 1) }}
+    {% endif %}
+    
 trigger:
   - platform: mqtt
     topic: frigate/events
