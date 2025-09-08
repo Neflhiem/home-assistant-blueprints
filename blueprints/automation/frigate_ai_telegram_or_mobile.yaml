@@ -61,6 +61,28 @@ blueprint:
           selector:
             text:
               multiline: false
+        auth_method:
+          name: Authentication Method
+          description: The method for authenticating snapshot/clip requests (e.g., 'digest' or 'basic').
+          default: digest
+          selector:
+            select:
+              options:
+                - digest
+                - basic
+        username:
+          name: Username
+          description: Username for authenticating snapshot/clip requests (e.g., Frigate HTTP auth username).
+          selector:
+            text:
+              multiline: false
+        password:
+          name: Password
+          description: Password for authenticating snapshot/clip requests (e.g., Frigate HTTP auth password).
+          selector:
+            text:
+              multiline: false
+              type: password
     mobile_section:
       name: Mobile App Settings
       description: Settings for Home Assistant mobile app notifications.
@@ -132,15 +154,6 @@ blueprint:
           selector:
             text:
               multiline: false
-        auth_method:
-          name: Authentication Method
-          description: The method for authenticating snapshot requests (e.g., 'digest' or 'basic').
-          default: digest
-          selector:
-            select:
-              options:
-                - digest
-                - basic
         message:
           name: Analysis Prompt
           description: Prompt for summarizing the event.
@@ -231,6 +244,8 @@ variables:
   provider: !input provider
   model: !input model
   auth_method: !input auth_method
+  username: !input username
+  password: !input password
   prompt: !input message
   analysis_duration: !input duration
   max_frames_num: !input max_frames
@@ -292,6 +307,8 @@ action:
               caption: "Movement detected: {{ object_label }} on {{ camera | replace('_', ' ') | title }}."
               url: "{{ snapshot_url }}"
               authentication: "{{ auth_method }}"
+              username: "{{ username }}"
+              password: "{{ password }}"
           - action: llmvision.stream_analyzer
             data:
               image_entity: "{{ camera_entity }}"
@@ -338,6 +355,8 @@ action:
                       Summary: {{ ai_response.response_text | default('No summary') }}
                     url: "{{ clip_url }}"
                     authentication: "{{ auth_method }}"
+                    username: "{{ username }}"
+                    password: "{{ password }}"
               until:
                 - condition: template
                   value_template: "{{ wait.trigger is defined and wait.trigger.payload_json['type'] == 'end' }}"
